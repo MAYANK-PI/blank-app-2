@@ -123,7 +123,6 @@ def colorize_mask(mask):
         [0, 0, 255]      # class 3 - blue
     ])
     mask_indices = np.argmax(mask, axis=-1)
-    color_mask = colors[mask_indices % len(colors)]
     return color_mask, mask_indices
 
 # ----------------------------
