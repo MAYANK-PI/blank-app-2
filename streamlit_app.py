@@ -10,13 +10,13 @@ from tensorflow.keras.layers import Input, Dropout, Dense, LSTM, Embedding, Add,
 import matplotlib.pyplot as plt
 
 # ----------------------------------------
-# Streamlit UI setup
+# Streamlit Setup
 # ----------------------------------------
 st.set_page_config(page_title="Image Segmentation + Captioning", layout="wide")
-st.title("Image Segmentation + Caption Generation (U-Net + CNN-LSTM)")
+st.title("Image Segmentation + Caption Generation (U-Net + CNN-LSTM Overlay View)")
 
 # ----------------------------------------
-# 1. Detect images folder
+# 1. Load Images Folder
 # ----------------------------------------
 IMAGE_DIR = os.path.join(os.getcwd(), "images")
 
@@ -45,7 +45,7 @@ def load_cnn_encoder():
 cnn_encoder = load_cnn_encoder()
 
 # ----------------------------------------
-# 3. Caption Generator (placeholder CNN-LSTM)
+# 3. Caption Model (Mock CNN-LSTM)
 # ----------------------------------------
 @st.cache_resource
 def load_caption_model(vocab_size=5000, max_length=20):
@@ -68,11 +68,11 @@ def load_caption_model(vocab_size=5000, max_length=20):
 caption_model = load_caption_model()
 
 def generate_caption(model, feature):
-    # Replace with your trained captioning logic
-    return "A beautiful natural landscape with trees and sky."
+    # Placeholder: Replace with trained captioning model later
+    return "A natural landscape with sky, trees, and greenery."
 
 # ----------------------------------------
-# 4. Build simple U-Net
+# 4. Simple U-Net Model
 # ----------------------------------------
 def build_unet(input_size=(128, 128, 3)):
     inputs = Input(input_size)
@@ -97,55 +97,67 @@ def build_unet(input_size=(128, 128, 3)):
     c5 = Conv2D(16, 3, activation='relu', padding='same')(u2)
     c5 = Conv2D(16, 3, activation='relu', padding='same')(c5)
 
-    outputs = Conv2D(3, 1, activation='softmax')(c5)  # 3 pseudo classes
+    outputs = Conv2D(3, 1, activation='softmax')(c5)
     model = Model(inputs, outputs)
     return model
 
 unet_model = build_unet()
 
 # ----------------------------------------
-# 5. Function: Apply random color map for classes
+# 5. Color Mask & Overlay Functions
 # ----------------------------------------
 def apply_color_mask(mask):
-    h, w, _ = mask.shape
     mask_class = np.argmax(mask, axis=-1)
     color_map = np.array([
-        [255, 0, 0],    # Class 0 - Red
-        [0, 255, 0],    # Class 1 - Green
-        [0, 0, 255]     # Class 2 - Blue
+        [255, 0, 0],    # Red
+        [0, 255, 0],    # Green
+        [0, 0, 255]     # Blue
     ])
     colored_mask = color_map[mask_class % 3].astype(np.uint8)
     return colored_mask
 
+def overlay_mask_on_image(image, mask, alpha=0.5):
+    image = np.array(image.convert("RGBA"))
+    mask_rgba = np.zeros_like(image)
+    mask_rgb = mask.astype(np.uint8)
+    mask_rgba[..., :3] = mask_rgb
+    mask_rgba[..., 3] = (alpha * 255).astype(np.uint8)
+    overlay = Image.alpha_composite(Image.fromarray(image), Image.fromarray(mask_rgba))
+    return overlay
+
 # ----------------------------------------
-# 6. Process and Display Results
+# 6. Process & Display
 # ----------------------------------------
 for idx, img_path in enumerate(image_files):
     st.subheader(f"Image {idx + 1}: {os.path.basename(img_path)}")
 
     img = Image.open(img_path).convert("RGB")
+
+    # Feature extraction
     img_resized = img.resize((299, 299))
     x = np.expand_dims(kimage.img_to_array(img_resized), axis=0)
     x = preprocess_input(x)
-
-    # CNN Feature Extraction
     feature = cnn_encoder.predict(x, verbose=0)
+
     caption = generate_caption(caption_model, feature)
 
-    # U-Net Segmentation
+    # Segmentation
     img_small = img.resize((128, 128))
     img_arr = np.expand_dims(np.array(img_small) / 255.0, axis=0)
     mask_pred = unet_model.predict(img_arr, verbose=0)[0]
-    colored_mask = apply_color_mask(mask_pred)
+    color_mask = apply_color_mask(mask_pred)
+    mask_resized = np.array(Image.fromarray(color_mask).resize(img.size))
 
-    # Resize mask to match image
-    mask_resized = Image.fromarray(colored_mask).resize(img.size)
+    # Overlay mask
+    overlay = overlay_mask_on_image(img, mask_resized, alpha=0.5)
 
-    # Display Results
-    col1, col2 = st.columns(2)
+    # Display
+    col1, col2, col3 = st.columns(3)
     with col1:
         st.image(img, caption="Original Image", use_container_width=True)
     with col2:
-        st.image(mask_resized, caption="Segmentation Mask (Colored by Class)", use_container_width=True)
+        st.image(mask_resized, caption="Segmentation Mask (Class Colors)", use_container_width=True)
+    with col3:
+        st.image(overlay, caption="Overlay: Mask + Original", use_container_width=True)
 
     st.write(f"**Generated Caption:** {caption}")
