@@ -1,5 +1,4 @@
 import streamlit as st
-import matplotlib.pyplot as plt
 import numpy as np
 import os
 from PIL import Image
@@ -13,21 +12,23 @@ from tensorflow.keras.layers import (
 )
 import matplotlib.pyplot as plt
 
+# ----------------------------------------
+# Streamlit Setup
+# ----------------------------------------
 st.set_page_config(page_title="Image Segmentation + Captioning", layout="wide")
 st.title("🖼️ Image Segmentation + Caption Generation (U-Net + CNN-LSTM)")
 
-# ----------------------------
-# 1️⃣ Load images from repo folder
-# ----------------------------
-IMAGE_DIR = "images"
+# ----------------------------------------
+# 1. Load Images Folder
+# ----------------------------------------
+IMAGE_DIR = os.path.join(os.getcwd(), "images")
 
 if not os.path.exists(IMAGE_DIR):
-    st.error(f"❌ Folder '{IMAGE_DIR}' not found! Please add it to your repo.")
+    st.error(f"❌ Folder '{IMAGE_DIR}' not found! Please add an 'images' folder in your repository.")
     st.stop()
 
 image_files = [
-    os.path.join(IMAGE_DIR, f)
-    for f in os.listdir(IMAGE_DIR)
+    os.path.join(IMAGE_DIR, f) for f in os.listdir(IMAGE_DIR)
     if f.lower().endswith(('.jpg', '.jpeg', '.png'))
 ]
 
@@ -37,11 +38,9 @@ if not image_files:
 
 st.success(f"📁 Found {len(image_files)} image(s) in '{IMAGE_DIR}'")
 
-
-
-# ----------------------------
-# 2️⃣ CNN Encoder (InceptionV3)
-# ----------------------------
+# ----------------------------------------
+# 2. CNN Encoder (InceptionV3)
+# ----------------------------------------
 @st.cache_resource
 def load_cnn_encoder():
     base = InceptionV3(weights="imagenet")
@@ -50,9 +49,9 @@ def load_cnn_encoder():
 
 cnn_encoder = load_cnn_encoder()
 
-# ----------------------------
-# 3️⃣ Caption Generator (mock model)
-# ----------------------------
+# ----------------------------------------
+# 3. Caption Generator (Mock CNN-LSTM)
+# ----------------------------------------
 @st.cache_resource
 def load_caption_model(vocab_size=5000, max_length=20):
     inputs1 = Input(shape=(2048,))
@@ -74,28 +73,25 @@ def load_caption_model(vocab_size=5000, max_length=20):
 caption_model = load_caption_model()
 
 def generate_caption(model, feature):
-    # Replace with your trained captioning model’s prediction later
-    return "a beautiful natural scene with sky and trees"
+    # Placeholder caption
+    return "A scenic view of nature with trees and sky."
 
-# ----------------------------
-# 4️⃣ U-Net for Segmentation
-# ----------------------------
-def build_unet(input_size=(128, 128, 3), num_classes=3):
+# ----------------------------------------
+# 4. U-Net Model for Segmentation
+# ----------------------------------------
+def build_unet(input_size=(128, 128, 3)):
     inputs = Input(input_size)
-
-    # Encoder
     c1 = Conv2D(16, 3, activation='relu', padding='same')(inputs)
     c1 = Conv2D(16, 3, activation='relu', padding='same')(c1)
-    p1 = MaxPooling2D((2, 2))(c1)
+    p1 = MaxPooling2D(pool_size=(2, 2))(c1)
 
     c2 = Conv2D(32, 3, activation='relu', padding='same')(p1)
     c2 = Conv2D(32, 3, activation='relu', padding='same')(c2)
-    p2 = MaxPooling2D((2, 2))(c2)
+    p2 = MaxPooling2D(pool_size=(2, 2))(c2)
 
     c3 = Conv2D(64, 3, activation='relu', padding='same')(p2)
     c3 = Conv2D(64, 3, activation='relu', padding='same')(c3)
 
-    # Decoder
     u1 = Conv2DTranspose(32, 2, strides=(2, 2), padding='same')(c3)
     u1 = concatenate([u1, c2])
     c4 = Conv2D(32, 3, activation='relu', padding='same')(u1)
@@ -106,55 +102,80 @@ def build_unet(input_size=(128, 128, 3), num_classes=3):
     c5 = Conv2D(16, 3, activation='relu', padding='same')(u2)
     c5 = Conv2D(16, 3, activation='relu', padding='same')(c5)
 
-    outputs = Conv2D(num_classes, 1, activation='softmax')(c5)
+    outputs = Conv2D(3, 1, activation='softmax')(c5)
     model = Model(inputs, outputs)
     return model
 
 unet_model = build_unet()
 
-# ----------------------------
-# 5️⃣ Helper: Colorize Mask
-# ----------------------------
-def colorize_mask(mask):
-    colors = np.array([
-        [0, 0, 0],       # class 0 - background (black)
-        [255, 0, 0],     # class 1 - red
-        [0, 255, 0],     # class 2 - green
-        [0, 0, 255]      # class 3 - blue
+# ----------------------------------------
+# 5. Mask Coloring & Legend
+# ----------------------------------------
+def apply_color_mask(mask):
+    mask_class = np.argmax(mask, axis=-1)
+    color_map = np.array([
+        [255, 0, 0],    # 0 - Red
+        [0, 255, 0],    # 1 - Green
+        [0, 0, 255]     # 2 - Blue
     ])
-    mask_indices = np.argmax(mask, axis=-1)
-    return color_mask, mask_indices
+    colored_mask = color_map[mask_class % 3].astype(np.uint8)
+    return colored_mask, mask_class
 
-# ----------------------------
-# 6️⃣ Process and Display Images
-# ----------------------------
+def overlay_mask_on_image(image, mask, alpha=0.5):
+    image = np.array(image.convert("RGBA"))
+    mask_rgba = np.zeros_like(image)
+    mask_rgb = mask.astype(np.uint8)
+    mask_rgba[..., :3] = mask_rgb
+    mask_rgba[..., 3] = int(alpha * 255)
+    overlay = Image.alpha_composite(Image.fromarray(image), Image.fromarray(mask_rgba))
+    return overlay
+
+def display_legend():
+    fig, ax = plt.subplots(figsize=(3, 1))
+    colors = np.array([[255, 0, 0], [0, 255, 0], [0, 0, 255]]) / 255.0
+    labels = ["Class 0", "Class 1", "Class 2"]
+    for i, color in enumerate(colors):
+        ax.bar(i, 1, color=color, label=labels[i])
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.legend(loc="center", ncol=3, frameon=False)
+    st.pyplot(fig)
+
+# ----------------------------------------
+# 6. Process & Display
+# ----------------------------------------
 for idx, img_path in enumerate(image_files):
     st.subheader(f"🖼️ Image {idx + 1}: {os.path.basename(img_path)}")
 
     img = Image.open(img_path).convert("RGB")
 
-    # Captioning (InceptionV3 features)
+    # Extract CNN features
     img_resized = img.resize((299, 299))
     x = np.expand_dims(kimage.img_to_array(img_resized), axis=0)
     x = preprocess_input(x)
     feature = cnn_encoder.predict(x, verbose=0)
+
     caption = generate_caption(caption_model, feature)
 
-    # Segmentation (U-Net)
+    # Segmentation prediction
     img_small = img.resize((128, 128))
     img_arr = np.expand_dims(np.array(img_small) / 255.0, axis=0)
-    mask = unet_model.predict(img_arr, verbose=0)[0]
+    mask_pred = unet_model.predict(img_arr, verbose=0)[0]
+    color_mask, mask_class = apply_color_mask(mask_pred)
+    mask_resized = np.array(Image.fromarray(color_mask).resize(img.size))
 
-    color_mask, mask_indices = colorize_mask(mask)
+    overlay = overlay_mask_on_image(img, mask_resized, alpha=0.4)
 
     # Display results
     col1, col2, col3 = st.columns(3)
     with col1:
         st.image(img, caption="Original Image", use_container_width=True)
     with col2:
-        st.image(color_mask.astype(np.uint8),
-                 caption="Segmentation Mask (Colored)", use_container_width=True)
+        st.image(mask_resized, caption="Segmentation Mask (Color Classes)", use_container_width=True)
+        st.write("**Class Indices:**")
+        st.write(np.unique(mask_class))
+        display_legend()
     with col3:
-        st.image(mask_indices, caption="Mask Indices", use_container_width=True)
+        st.image(overlay, caption="Overlay: Mask + Original", use_container_width=True)
 
-    st.write(f"📝 **Generated Caption:** {caption}")
+    st.write(f"**📝 Generated Caption:** {caption}")
