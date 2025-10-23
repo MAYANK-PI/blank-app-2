@@ -58,3 +58,101 @@ def load_caption_model(vocab_size=5000, max_length=20):
 inputs1 = Input(shape=(2048,))
 fe1 = Dropout(0.5)(inputs1)
 fe2 = Dense(256, activation='relu')(fe1)
+inputs2 = Input(shape=(max_length,))
+se1 = Embedding(vocab_size, 256, mask_zero=True)(inputs2)
+se2 = Dropout(0.5)(se1)
+se3 = LSTM(256)(se2)
+
+decoder1 = Add()([fe2, se3])
+decoder2 = Dense(256, activation='relu')(decoder1)
+outputs = Dense(vocab_size, activation='softmax')(decoder2)
+
+model = Model(inputs=[inputs1, inputs2], outputs=outputs)
+return model
+caption_model = load_caption_model()
+max_length = 20
+
+def generate_caption(feature):
+"""Mock caption generator returning random full sentence."""
+captions = [
+"A person walking in a green park under a blue sky.",
+"A group of people riding horses on the field.",
+"A beautiful mountain landscape with snow and clouds.",
+"A cat sitting near a window watching outside.",
+"A car parked near a tall building at sunset."
+]
+return np.random.choice(captions)
+
+----------------------------------------
+4️⃣ U-Net Model for Segmentation
+----------------------------------------
+
+def build_unet(input_size=(128, 128, 3)):
+inputs = Input(input_size)
+c1 = Conv2D(16, 3, activation='relu', padding='same')(inputs)
+c1 = Conv2D(16, 3, activation='relu', padding='same')(c1)
+p1 = MaxPooling2D(pool_size=(2, 2))(c1)
+c2 = Conv2D(32, 3, activation='relu', padding='same')(p1)
+c2 = Conv2D(32, 3, activation='relu', padding='same')(c2)
+p2 = MaxPooling2D(pool_size=(2, 2))(c2)
+
+c3 = Conv2D(64, 3, activation='relu', padding='same')(p2)
+c3 = Conv2D(64, 3, activation='relu', padding='same')(c3)
+
+u1 = Conv2DTranspose(32, 2, strides=(2, 2), padding='same')(c3)
+u1 = concatenate([u1, c2])
+c4 = Conv2D(32, 3, activation='relu', padding='same')(u1)
+c4 = Conv2D(32, 3, activation='relu', padding='same')(c4)
+
+u2 = Conv2DTranspose(16, 2, strides=(2, 2), padding='same')(c4)
+u2 = concatenate([u2, c1])
+c5 = Conv2D(16, 3, activation='relu', padding='same')(u2)
+c5 = Conv2D(16, 3, activation='relu', padding='same')(c5)
+
+outputs = Conv2D(1, 1, activation='sigmoid')(c5)
+model = Model(inputs, outputs)
+return model
+unet_model = build_unet()
+
+----------------------------------------
+5️⃣ Display Images + Segmentation + Captions
+----------------------------------------
+
+for idx, img_path in enumerate(image_files):
+st.subheader(f"🖼️ Image {idx + 1}: {os.path.basename(img_path)}")
+# Load and preprocess image
+img = Image.open(img_path).convert("RGB")
+
+# CNN feature extraction
+img_resized = img.resize((299, 299))
+x = np.expand_dims(kimage.img_to_array(img_resized), axis=0)
+x = preprocess_input(x)
+feature = cnn_encoder.predict(x, verbose=0)
+
+# Generate full-sentence caption
+caption = generate_caption(feature)
+
+# U-Net segmentation mask
+img_small = img.resize((128, 128))
+img_arr = np.expand_dims(np.array(img_small) / 255.0, axis=0)
+mask = unet_model.predict(img_arr, verbose=0)[0].squeeze()
+
+# Convert to label indices (simulate segmentation)
+mask_indices = np.digitize(mask, bins=np.linspace(0, 1, 5))  # 5 classes
+mask_colored = (mask_indices / mask_indices.max()) * 255
+mask_colored = mask_colored.astype(np.uint8)
+
+# Display side by side
+col1, col2, col3 = st.columns([2, 2, 1])
+
+with col1:
+    st.image(img, caption="Original Image", use_container_width=True)
+with col2:
+    st.image(mask_colored, caption="Segmentation Mask (Class Indices)", use_container_width=True)
+with col3:
+    st.write("### 🧾 Caption")
+    st.write(caption)
+    st.write("### 🎨 Mask Stats")
+    unique_classes = np.unique(mask_indices)
+    st.write(f"Classes detected: {len(unique_classes)}")
+    st.write(f"Indices: {unique_classes.tolist()}")
