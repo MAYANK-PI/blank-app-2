@@ -37,42 +37,6 @@ if not image_files:
 
 st.success(f"📁 Found {len(image_files)} image(s) in '{IMAGE_DIR}'")
 
-# number of samples to show
-N = 4  
-
-# pick first N image IDs from train split
-train_file = os.path.join(base_dir, "ImageSets", "Segmentation", "train.txt")
-
-
-with open(train_file) as f:
-    img_ids = [line.strip() for line in f.readlines()[:N]]
-
-# create figure
-plt.figure(figsize=(12, 6))
-
-for i, img_id in enumerate(img_ids):
-    # build paths
-    img_path = os.path.join(base_dir, "JPEGImages", img_id + ".jpg")
-    mask_path = os.path.join(base_dir, "SegmentationClass", img_id + ".png")
-
-    # open
-    img = Image.open(img_path).convert("RGB")
-    mask = Image.open(mask_path)
-
-    # show image
-    plt.subplot(2, N, i+1)
-    plt.imshow(img)
-    plt.title(f"Image {img_id}")
-    plt.axis("off")
-
-    # show mask
-    plt.subplot(2, N, N+i+1)
-    plt.imshow(mask)
-    plt.title(f"Mask {img_id}")
-    plt.axis("off")
-
-plt.tight_layout()
-plt.show()
 
 
 # ----------------------------
