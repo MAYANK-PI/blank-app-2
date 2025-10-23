@@ -37,10 +37,6 @@ if not image_files:
 
 st.success(f"📁 Found {len(image_files)} image(s) in '{IMAGE_DIR}'")
 
-from PIL import Image
-import matplotlib.pyplot as plt
-import os
-
 # number of samples to show
 N = 4  
 
